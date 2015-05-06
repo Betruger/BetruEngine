@@ -1,300 +1,352 @@
 <html>
+
 <head>
- <title> BetruEngine </title>
-            <style type="text/css">
-                canvas {border: 1px solid black;}
-            </style>
+<title>BetruEngine v.0.0.2</title>
 
-    <!-- MATH Libraries //-->
-<script type='text/javascript' src='matrix/gl-matrix-min.js'></script>
+<script type="text/javascript" src="matrix/gl-matrix-min.js"></script>
+<script type="text/javascript" src="utils.js"></script>
 
-	<script id = "code-js" type="text/javascript">
+<script type="text/javascript">
 
-	var indices = [];
-	var vertices = [];
+    var objects = [];
 
-	var rotation = [180,0,0];
-	var home     = [0,0,-50];
-    var position = [0,0,-50];
+    var texture = null;
 
-    var fig_rotation = [1, 0, 0];
-  //  var rot_direction = [1, 1, 1, 0];
+    var rotation = [0, 0, 0];
+    var position = [0, 0, -5];
 
-	var indBuffer = null;
-	var vertBuffer = null;
+    var obj_rot = [0, 0, 0];
 
-    var gl = null;
-	var prg = null;
+    var lightposition = [0, 0, -5];
+    var lightambient = [0.40,0.40,0.40,1.0];
+    var lightdiffuse = [1.0, 1.0, 1.0, 1.0];
 
-	var c_width = 0;
-	var c_height = 0;
+    var materialdiffuse = [1.0, 1.0, 1.0, 1.0];
 
-	var VSHADER_SOURCE = null;
-	var FSHADER_SOURCE = null;
+    var mvMatrix = mat4.create();
+    var pMatrix = mat4.create();
+    var nMatrix = mat4.create();
+    var cMatrix = mat4.create();
+    var tempMatrix = mat4.create();
 
-	var mvMatrix    = mat4.create();   // The Model-View matrix
-    var pMatrix     = mat4.create();
-    var cMatrix     = mat4.create();
+    var shaderProgram;
 
-    var oMatrix = mat4.create();
+    var cubeVertexPositionBuffer;
+    var cubeVertexTextureCoordBuffer;
+    var cubeVertexIndexBuffer;
+    var cubeNormalBuffer;
 
-	function initTransforms()
+    function initShaders() {
+    var fragmentShader = readShaderFile("shader-fs.glsl", 'f');
+    var vertexShader = readShaderFile("shader-vs.glsl", 'v');
+
+    shaderProgram = gl.createProgram();
+    gl.attachShader(shaderProgram, vertexShader);
+    gl.attachShader(shaderProgram, fragmentShader);
+    gl.linkProgram(shaderProgram);
+
+    if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+        alert("Could not initialise shaders");
+    }
+
+    gl.useProgram(shaderProgram);
+
+    shaderProgram.vertexPositionAttribute = gl.getAttribLocation(shaderProgram, "aVertexPosition");
+    gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
+
+    shaderProgram.textureCoordAttribute = gl.getAttribLocation(shaderProgram, "aTextureCoord");
+    gl.enableVertexAttribArray(shaderProgram.textureCoordAttribute);
+
+    shaderProgram.vertexNormalAttribute = gl.getAttribLocation(shaderProgram, "aVertexNormal");
+    gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
+
+    shaderProgram.pMatrixUniform = gl.getUniformLocation(shaderProgram, "uPMatrix");
+    shaderProgram.mvMatrixUniform = gl.getUniformLocation(shaderProgram, "uMVMatrix");
+    shaderProgram.nMatrixUniform = gl.getUniformLocation(shaderProgram, "uNMatrix");
+    shaderProgram.samplerUniform = gl.getUniformLocation(shaderProgram, "uSampler");
+
+    shaderProgram.uLightAmbient     = gl.getUniformLocation(shaderProgram, "uLightAmbient");
+    shaderProgram.uLightDiffuse     = gl.getUniformLocation(shaderProgram, "uLightDiffuse");
+    shaderProgram.uLightPosition    = gl.getUniformLocation(shaderProgram, "uLightPosition");
+    shaderProgram.uMaterialDiffuse    = gl.getUniformLocation(shaderProgram, "uMaterialDiffuse");
+
+    gl.uniform3fv(shaderProgram.uLightPosition,    lightposition);
+    gl.uniform4fv(shaderProgram.uLightAmbient,      lightambient);
+    gl.uniform4fv(shaderProgram.uLightDiffuse,     lightdiffuse);
+    gl.uniform4fv(shaderProgram.uMaterialDiffuse,     materialdiffuse);
+    }
+
+    function handleLoadedTexture(texture) {
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    }
+
+    function initTexture() {
+        texture = gl.createTexture();
+        texture.image = new Image();
+        texture.image.onload = function () {
+            handleLoadedTexture(texture)
+        }
+        texture.image.src = "bricks.png";
+    }
+
+    function setMatrixUniforms() {
+
+    gl.uniformMatrix4fv(shaderProgram.pMatrixUniform, false, pMatrix);
+    gl.uniformMatrix4fv(shaderProgram.mvMatrixUniform, false, mvMatrix);
+
+    mat4.identity(nMatrix);
+    mat4.set(mvMatrix, nMatrix);
+    mat4.inverse(nMatrix);
+    mat4.transpose(nMatrix);
+
+    gl.uniformMatrix4fv(shaderProgram.nMatrixUniform, false, nMatrix);
+    }
+
+    var obj;
+
+    function loadObjectBuffers(o)
+    {
+        obj = o;
+        //var o = loadObject("cube.json");
+
+        cubeVertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(o.vertices), gl.STATIC_DRAW);
+        cubeVertexPositionBuffer.itemSize = 3;
+        cubeVertexPositionBuffer.numItems = 24;
+
+        cubeVertexTextureCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(o.texture_coords), gl.STATIC_DRAW);
+        cubeVertexTextureCoordBuffer.itemSize = 2;
+        cubeVertexTextureCoordBuffer.numItems = 24;
+
+        cubeVertexIndexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+
+        cubeNormalBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeNormalBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(calculateNormals(o.vertices, o.indices)), gl.STATIC_DRAW);
+
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(o.indices), gl.STATIC_DRAW);
+        cubeVertexIndexBuffer.itemSize = 1;
+        cubeVertexIndexBuffer.numItems = 36;
+    }
+
+    function loadObject(filename)
 {
-   // mvMatrix = mat4.create();
-   // pMatrix = mat4.create();
-   // cMatrix = mat4.create();
+    var request = new XMLHttpRequest();
+    request.open("GET",filename);
 
-    //Initialize Model-View matrix
-    mat4.identity(mvMatrix);
-    mat4.translate(mvMatrix, home);
-   // displayMatrix(mvMatrix);
-
-    //Initialize Camera matrix as the inverse of the Model-View Matrix
-    mat4.identity(cMatrix);
-    mat4.inverse(mvMatrix,cMatrix);
-
-    //Initialize Perspective matrix
-    mat4.identity(pMatrix);
-
-    mat4.identity(oMatrix);
-    oMatrix[3] = 0;
-    //mat4.translate(rot_direction);
-  //  mat4.translate(rot_direction);
-
-}
-
-function updateTransforms()
-{
-
-
-     mat4.perspective(60, c_width / c_height, 0.1, 1000.0, pMatrix);
-
-    mat4.identity(cMatrix);
-    mat4.translate(cMatrix,position);
-    mat4.rotateX(cMatrix,rotation[0]*Math.PI/180);
-    mat4.rotateY(cMatrix,rotation[1]*Math.PI/180);
-    mat4.rotateZ(cMatrix,rotation[2]*Math.PI/180);
-
-     mat4.rotateX(oMatrix,fig_rotation[0]*Math.PI/180);
-    mat4.rotateY(oMatrix,fig_rotation[1]*Math.PI/180);
-    mat4.rotateZ(oMatrix,fig_rotation[2]*Math.PI/180);
-
-
-}
-
-function setMatrixUniforms()
-{
-    mat4.inverse(cMatrix, mvMatrix);      //Obtain Model-View matrix from Camera Matrix
-      //   displayMatrix(cMatrix);
-
-    gl.uniformMatrix4fv(prg.uPMatrix, false, pMatrix);    //Maps the Perspective matrix to the uniform prg.uPMatrix
-     gl.uniformMatrix4fv(prg.uMVMatrix, false, mvMatrix);
-     gl.uniformMatrix4fv(prg.uOMatrix, false, oMatrix);
-}
-
-    function getGLContext()
-        {
-            var canvas = document.getElementById("canvas-element-id");
-            if (canvas == null)
-            {
-                alert("there is no canvas on this page");
-                return;
-            }
-             else
-            {
-                c_width = canvas.width;
-                c_height = canvas.height;
-            }
-            var names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
-            for (var i = 0; i < names.length; ++i)
-            {
-                {
-                    gl = canvas.getContext(names[i]);
+    request.onreadystatechange = function() {
+            if (request.readyState == 4) {
+                if(request.status == 404) {
+                    console.info(filename + ' does not exist');
                 }
-                if (gl)
-                break;
+                else {
+                var o = JSON.parse(request.responseText);
+                    //o.alias = (alias==null)?'none':alias;
+                    //o.remote = true;
+                   // return o;
+                loadObjectBuffers(o);
+                return;
+                }
             }
-            if (gl == null)
+        }
+        request.send();
+}
+
+
+    function drawScene() {
+        gl.viewport(0, 0, c_width, c_height);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        mat4.perspective(45, c_width / c_height, 0.1, 100.0, pMatrix);
+
+        mat4.identity(mvMatrix);
+
+        mat4.rotate(mvMatrix, degToRad(rotation[0]), [1, 0, 0]);
+        mat4.rotate(mvMatrix, degToRad(rotation[1]), [0, 1, 0]);
+        mat4.rotate(mvMatrix, degToRad(rotation[2]), [0, 0, 1]);
+
+        mat4.translate(mvMatrix, position);
+
+        mat4.identity(tempMatrix);
+        mat4.set(mvMatrix, tempMatrix);
+
+        if (obj)
+        {
+            for (var i = 0; i < objects.length; i++)
             {
-                alert("WebGL is not available");
-            }
-        }
+        var objectd = objects[i];
 
+        mat4.identity(cMatrix);
+        mat4.translate(cMatrix, objectd.obj_pos);
 
-    function readShaderFile(fileName, shader_name)
-    {
-  var request = new XMLHttpRequest();
-  var shader = null;
+        mat4.rotate(cMatrix, degToRad(obj_rot[0]), [1, 0, 0]);
+        mat4.rotate(cMatrix, degToRad(obj_rot[1]), [0, 1, 0]);
+        mat4.rotate(cMatrix, degToRad(obj_rot[2]), [0, 0, 1]);
 
-  request.onreadystatechange = function() {
-    if (request.readyState === 4 && request.status !== 404) {
-      shader = onReadShader(request.responseText, shader_name);
-    }
-  }
-  request.open('GET', fileName, false); // Создаём запрос получения файла (синхронный!!!)
-  request.send();
+        mat4.inverse(cMatrix);
 
-    return shader;
-}
+        var lightpos = [1.0, 1.0, 1.0];
+        lightpos[0] = -lightposition[0];
+        lightpos[1] = -lightposition[1];
+        lightpos[2] = -lightposition[2];
 
-// Шейдер загружен из файла
-function onReadShader(fileString, shader_name) {
+         mat4.multiplyVec3(cMatrix, lightpos, lightpos);
 
-      var shader = null;
+        gl.uniform3fv(shaderProgram.uLightPosition,  lightpos);
 
-  if (shader_name == 'v') { // Вершинный шейдер
-    VSHADER_SOURCE = fileString;
-    shader = gl.createShader(gl.VERTEX_SHADER);
-     gl.shaderSource(shader, VSHADER_SOURCE);
-  } else
-  if (shader_name == 'f') { // Фрагментный шейдер
-    FSHADER_SOURCE = fileString;
-    shader = gl.createShader(gl.FRAGMENT_SHADER);
-    gl.shaderSource(shader, FSHADER_SOURCE);
-   // alert(FSHADER_SOURCE);
-  }
-  else
-  {
-  alert("Incorrect shader type");
-  return null;
-  }
+        mat4.translate(mvMatrix, objectd.obj_pos);
 
-        gl.compileShader(shader);
+         mat4.rotate(mvMatrix, degToRad(obj_rot[0]), [1, 0, 0]);
+        mat4.rotate(mvMatrix, degToRad(obj_rot[1]), [0, 1, 0]);
+        mat4.rotate(mvMatrix, degToRad(obj_rot[2]), [0, 0, 1]);
 
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    alert(gl.getShaderInfoLog(shader));
-    return null;
-        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexPositionBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, cubeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-   return shader;
-}
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeNormalBuffer);
+        gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, 3, gl.FLOAT, false, 0, 0);
 
+        gl.bindBuffer(gl.ARRAY_BUFFER, cubeVertexTextureCoordBuffer);
+        gl.vertexAttribPointer(shaderProgram.textureCoordAttribute, cubeVertexTextureCoordBuffer.itemSize, gl.FLOAT, false, 0, 0);
 
-	function initProgram()
-{
-       var fgShader = readShaderFile('./shader-fs.glsl', 'f');
-		var vxShader = readShaderFile('./shader-vs.glsl', 'v');
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.uniform1i(shaderProgram.samplerUniform, 0);
 
-		prg = gl.createProgram();
-		gl.attachShader(prg, vxShader);
-		gl.attachShader(prg, fgShader);
-		gl.linkProgram(prg);
-
-		if (!gl.getProgramParameter(prg, gl.LINK_STATUS)) {
-			alert("Could not initialise shaders");
-		}
-
-		gl.useProgram(prg);
-
-		//The following lines allow us obtaining a reference to the uniforms and attributes defined in the shaders.
-
-		prg.vertexPosition = gl.getAttribLocation(prg, "aVertexPosition");
-
-		prg.uPMatrix         = gl.getUniformLocation(prg, "uPMatrix");
-        prg.uMVMatrix        = gl.getUniformLocation(prg, "uMVMatrix");
-        prg.uOMatrix         = gl.getUniformLocation(prg, "uOMatrix");
-
-}
-
-	function initBuffers()
-{
-	vertices = [-5, 5, 0.0,
-			-5, -5, 0.0,
-			5, -5, 0.0,
-			5, 5, 0.0];
-
-	indices = [3,2,1,3,1,0];
-
-	vertBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ARRAY_BUFFER, vertBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-		gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-		//The following code snippet creates a vertex buffer and binds the indices to it
-		indBuffer = gl.createBuffer();
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indBuffer);
-		gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
-		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-}
-
-    function requestAnimFrame(callback)
-    {
-        window.setTimeout(callback);
-    }
-
-    //*/function requestAnimFrame () {
-   // return window.requestAnimationFrame ||
-    //     window.webkitRequestAnimationFrame ||
-    //     window.mozRequestAnimationFrame ||
-     //    window.oRequestAnimationFrame ||
-     //    window.msRequestAnimationFrame ||
-    //     function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
-    //       window.setTimeout(callback, 1000/60);
-     //    };
-     //    }/*
-
-     function configure()
-     {
-        	gl.clearColor(0.3, 0.3, 0.3, 1.0);
-	gl.clearDepth(200.0);
-    gl.enable(gl.DEPTH_TEST);
-      gl.depthFunc(gl.LEQUAL);
-      initTransforms();
-     //  updateTransforms();
-     //   setMatrixUniforms();
-
-     }
-
-	function drawScene()
-{
-
- gl.viewport(0,0,c_width, c_height);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-
-       updateTransforms();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
         setMatrixUniforms();
 
-          gl.enableVertexAttribArray(prg.vertexPosition);
+        gl.drawElements(gl.TRIANGLES, cubeVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, vertBuffer);
-    gl.vertexAttribPointer(prg.aVertexPosition, 3, gl.FLOAT, false, 0, 0);
-
-
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indBuffer);
-    gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT,0);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+        mat4.set(tempMatrix, mvMatrix);
 }
+   obj_rot[0]++;
+   obj_rot[1]++;
+   }
+   }
 
 
-	function renderLoop()
+    function tick() {
+        requestAnimFrame(tick);
+        drawScene();
+    }
+
+
+
+function mouseLoop(e)
 {
-   // fig_rotation[0]++;
-    requestAnimFrame(renderLoop);
-	drawScene();
+ var movementX = e.movementX ||
+      e.mozMovementX          ||
+      e.webkitMovementX       ||
+      0;
+
+  var movementY = e.movementY ||
+      e.mozMovementY      ||
+      e.webkitMovementY   ||
+      0;
+
+  rotation[1] += movementX;
+
+  rotation[0] += movementY;
+
 }
 
-	function runWebGLApp()
+
+var currentlyPressedKeys = {};
+
+  function handleKeyDown(event) {
+    currentlyPressedKeys[event.keyCode] = true;
+
+    if (String.fromCharCode(event.keyCode) == "W") {
+      position[0] -= Math.sin(degToRad( rotation[1] )  ) * Math.cos(degToRad(rotation[0]));
+    position[2] += Math.cos(degToRad( rotation[1] )  ) * Math.cos(degToRad(rotation[0]));
+    position[1] += Math.sin(degToRad(rotation[0]));
+    }
+
+      if (String.fromCharCode(event.keyCode) == "S") {
+      position[0] += Math.sin(degToRad( rotation[1] )  ) * Math.cos(degToRad(rotation[0]));
+    position[2] -= Math.cos(degToRad( rotation[1] )  ) * Math.cos(degToRad(rotation[0]));
+    position[1] -= Math.sin(degToRad(rotation[0]));
+    }
+
+    if (String.fromCharCode(event.keyCode) == "A")
+    {
+     position[0] += Math.cos(degToRad(rotation[1]));
+     position[2] += Math.sin(degToRad(rotation[1]));
+    }
+
+    if (String.fromCharCode(event.keyCode) == "D")
+    {
+     position[0] -= Math.cos(degToRad(rotation[1]));
+     position[2] -= Math.sin(degToRad(rotation[1]));
+    }
+
+  }
+
+  function handleKeyUp(event) {
+    currentlyPressedKeys[event.keyCode] = false;
+  }
+
+function Object (position)
 {
-	getGLContext();
-	initProgram();
-	initBuffers();
-
-	configure();
-
-    renderLoop();
-
+    this.obj_pos = position;
 }
 
-	</script>
+    function addObjects()
+    {
+        var object1 = new Object( [0.0, 0.0, 10.0] );
 
-        </head>
-        <body onLoad = 'runWebGLApp()'>
-            <canvas id="canvas-element-id" width="480" height="400">
-                Your browser does not support HTML5
-            </canvas>
-        </body>
+        objects.push(object1);
+
+        var object2 = new Object( [0.0, 0.0, 0.0] );
+
+        objects.push(object2);
+    }
+
+    function webGLStart() {
+        initGL();
+        initShaders();
+
+        loadObject("cube.json");
+
+        initTexture();
+
+        addObjects();
+
+        setPointerLock();
+
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
+        gl.enable(gl.DEPTH_TEST);
+         gl.depthFunc(gl.LESS);
+
+         document.onkeydown = handleKeyDown;
+        document.onkeyup = handleKeyUp;
+
+        tick();
+    }
+
+
+</script>
+
+</head>
+
+<body onload="webGLStart();">
+
+    <canvas id="canvas_id" style="border: none;" width="800" height="600"></canvas>
+
+</body>
 
 </html>
