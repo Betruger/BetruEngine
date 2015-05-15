@@ -1,16 +1,10 @@
-
+var canvas;
 var gl;
- var canvas = null;
 
-     var c_width = null;
-    var c_height = null;
+var EXT;
 
-      function degToRad(degrees) {
-        return degrees * Math.PI / 180;
-    }
-
-    function initGL() {
-        canvas = document.getElementById("canvas_id");
+function initGL() {
+        canvas = document.getElementById("your_canvas");
             if (canvas == null)
             {
                 alert("there is no canvas on this page");
@@ -18,8 +12,10 @@ var gl;
             }
         else
             {
-            c_width = canvas.width;
-            c_height = canvas.height;
+            canvas.width=window.innerWidth;
+            canvas.height=window.innerHeight;
+           // c_width = canvas.width;
+           // c_height = canvas.height;
             }
             var names = ["webgl", "experimental-webgl", "webkit-3d", "moz-webgl"];
             for (var i = 0; i < names.length; ++i)
@@ -34,10 +30,11 @@ var gl;
             {
                 alert("WebGL is not available");
             }
+
+            EXT = gl.getExtension("OES_element_index_uint") ||
+      gl.getExtension("MOZ_OES_element_index_uint") ||
+        gl.getExtension("WEBKIT_OES_element_index_uint");
     }
-
-
-
 
 
 function onReadShader(fileString, shader_name) {
@@ -87,6 +84,52 @@ function readShaderFile(fileName, shader_name)
   request.send();
 
     return shader;
+}
+
+
+
+window.requestAnimFrame = (function() {
+  return window.requestAnimationFrame ||
+         window.webkitRequestAnimationFrame ||
+         window.mozRequestAnimationFrame ||
+         window.oRequestAnimationFrame ||
+         window.msRequestAnimationFrame ||
+         function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
+           window.setTimeout(callback, 1000/60);
+         };
+})();
+
+function lockChangeAlert() {
+  if(document.pointerLockElement === canvas ||
+  document.mozPointerLockElement === canvas ||
+  document.webkitPointerLockElement === canvas) {
+   // console.log('The pointer lock status is now locked');
+   document.onmousemove = mouseLoop;
+    //document.addEventListener("mousemove", mouseLoop, false);
+  } else {
+   // console.log('The pointer lock status is now unlocked');
+   document.onmousemove = null;
+   // document.removeEventListener("mousemove", mouseLoop, false);
+  }
+}
+
+function setPointerLock ()
+{
+    canvas.requestPointerLock = canvas.requestPointerLock ||
+           canvas.mozRequestPointerLock ||
+           canvas.webkitRequestPointerLock;
+
+    document.exitPointerLock = document.exitPointerLock ||
+         document.mozExitPointerLock ||
+         document.webkitExitPointerLock;
+
+         canvas.onclick = function() {
+  canvas.requestPointerLock();
+}
+
+document.onpointerlockchange = lockChangeAlert;
+document.onmozpointerlockchange = lockChangeAlert;
+document.onwebkitpointerlockchange = lockChangeAlert;
 }
 
 function calculateNormals (vs, ind)
@@ -146,52 +189,3 @@ function calculateNormals (vs, ind)
 
         return ns;
     }
-
-
-/**
- * Provides requestAnimationFrame in a cross browser way.
- */
-window.requestAnimFrame = (function() {
-  return window.requestAnimationFrame ||
-         window.webkitRequestAnimationFrame ||
-         window.mozRequestAnimationFrame ||
-         window.oRequestAnimationFrame ||
-         window.msRequestAnimationFrame ||
-         function(/* function FrameRequestCallback */ callback, /* DOMElement Element */ element) {
-           window.setTimeout(callback, 1000/60);
-         };
-})();
-
-
-function lockChangeAlert() {
-  if(document.pointerLockElement === canvas ||
-  document.mozPointerLockElement === canvas ||
-  document.webkitPointerLockElement === canvas) {
-   // console.log('The pointer lock status is now locked');
-   document.onmousemove = mouseLoop;
-    //document.addEventListener("mousemove", mouseLoop, false);
-  } else {
-   // console.log('The pointer lock status is now unlocked');
-   document.onmousemove = null;
-   // document.removeEventListener("mousemove", mouseLoop, false);
-  }
-}
-
-function setPointerLock ()
-{
-    canvas.requestPointerLock = canvas.requestPointerLock ||
-           canvas.mozRequestPointerLock ||
-           canvas.webkitRequestPointerLock;
-
-    document.exitPointerLock = document.exitPointerLock ||
-         document.mozExitPointerLock ||
-         document.webkitExitPointerLock;
-
-         canvas.onclick = function() {
-  canvas.requestPointerLock();
-}
-
-document.onpointerlockchange = lockChangeAlert;
-document.onmozpointerlockchange = lockChangeAlert;
-document.onwebkitpointerlockchange = lockChangeAlert;
-}
